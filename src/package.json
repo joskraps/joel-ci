@@ -14,6 +14,7 @@
     "nodegit": "^0.16.0",
     "promisify": "0.0.3",
     "querystring": "^0.2.0",
-    "request": "^2.79.0"
+    "request": "^2.79.0",
+    "walk": "^2.3.9"
   }
 }

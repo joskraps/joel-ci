@@ -1,69 +1,26 @@
-var Promise = require('bluebird');
-var githubhook = require('githubhook');
-var exec = require('child_process').exec;
-var nodegit = require("nodegit");
-var path = require('path');
-var fse = require("fs-extra");
-var util = require('util');
-var http = require('http');
-var request = require('request');
-var url = require('url');
+var Promise = require('bluebird'),
+    githubhook = require('githubhook'),
+    exec = require('child_process').exec,
+    nodegit = require("nodegit"),
+    path = require('path'),
+    fse = require("fs-extra"),
+    util = require('util'),
+    http = require('http'),
+    request = require('request'),
+    url = require('url'),
+    walk = require('walk');
 
-//var helpers = require('./helpers.js');
+var helpers = require('./helpers.js');
 var config = require('./server-config.js');
-//var cpp = require('./childProcessPromise.js');
 var github = githubhook(config.gitHubHookConfig);
-
-function payloadGenerator(status, description) {
-    var payload = {
-        "state": status,
-        "description": description,
-        "context": "continuous-integration/joel-ci"
-    };
-
-    return payload;
-}
 
 if (!fse.existsSync(config.rootDir)) {
     fse.mkdirSync(config.rootDir);
 }
 
-function runTask(command, root, env) {
-    console.log(`Path: ${root} Command: ${command}`);
+NPM_CONFIG_COLOR = "always";
 
-    var local = exec(command, {
-        cwd: root,
-        env: env
-    });
-    local.stdout.on('data', function(data) {
-        console.log(data)
-    });
-    local.stderr.on('data', function(data) {
-        console.log(data)
-    });
-    return promiseFromChildProcess(local);
-}
-
-function promiseFromChildProcess(child) {
-    return new Promise((resolve, reject) => {
-        child.addListener('error', (code, signal) => {
-            console.log('ChildProcess error', code, signal);
-            reject();
-        });
-        child.addListener('exit', (code, signal) => {
-            console.log(`Exit code: ${code}`)
-            if (code === 0) {
-                resolve();
-            } else {
-                reject();
-            }
-        });
-    });
-}
-var commands = ["npm version", "npm install", "gulp \"run-tests\""];
-var rootProj = 'C:\\node\\GitHook\\tmp\\point-of-care\\joel-ci\\Source\\Cerner.PointOfCare.UI';
-
-github.on('*', function(event, repo, ref, data) {
+github.on('*', function (event, repo, ref, data) {
 
     if (event === "ping") return "pong";
     if (event == "pull_request") return "boom";
@@ -73,68 +30,78 @@ github.on('*', function(event, repo, ref, data) {
         branchName = splitBranch[splitBranch.length - 1],
         sha1 = data.after,
         cloneOptions = new nodegit.CloneOptions(),
-        branchPathFull = path.join(config.rootDir, repo, branchName);
+        branchPathFull = path.join(config.rootDir, repo, branchName),
+        postUrl = helpers.formatStatusUrl(data.repository.statuses_url, data.after, config);
 
     cloneOptions.checkoutBranch = branchName;
 
-    console.log('Cleaning');
-    fse.remove(branchPathFull, function(err) {
-        if (err) return console.error(err)
-        console.log('Creating');
-        fse.ensureDir(branchPathFull, function(err2) {
-            if (err) return console.error(err2);
-            console.log('Cloning');
-            nodegit.Clone(data.repository.html_url, branchPathFull, cloneOptions)
-                .then(function(repo) {
-                    console.log('Updating status');
-                    console.log(repo)
-                    var comConfig = require('./joel-ci.json');
+    helpers.updateStatus(postUrl, "pending", "Running tasks", function (error, response, body) {
+        console.log('Cleaning');
+        fse.remove(branchPathFull, function (err) {
+            if (err) {
+                helpers.updateStatus(postUrl, "failure", err, function (error, response, body) {
+                });
+                return console.error(err)
+            }
 
-                    var baseUrl = url.parse(data.repository.statuses_url.replace("{sha}", data.after), false, true);
-                    baseUrl.auth = `${comConfig.authUser}:${comConfig.authToken}`;
-                    var postUrl = `${baseUrl.protocol}//${baseUrl.auth}@${baseUrl.hostname}${baseUrl.path}`;
-                    //'https://js022742:fb924bf64d160620454f462990ae2d5f0436e97a@github.cerner.com/api/v3/repos/js022742/TestHookRepo/statuses/' + sha1
+            console.log('Creating');
+            fse.ensureDir(branchPathFull, function (err2) {
+                if (err2) {
+                    helpers.updateStatus(postUrl, "failure", err, function (error, response, body) {
+                    });
+                    return console.error(err2)
+                }
+                console.log('Cloning');
+                nodegit.Clone(data.repository.html_url, branchPathFull, cloneOptions)
+                    .then(function (repo) {
+                        console.log('Updating status');
 
-                    request.post(postUrl, {
-                        'json': true,
-                        'body': payloadGenerator("pending", "Running tests")
-                    }, function(error, response, body) {
-                        var commands = ["npm version", "echo BOOOOOOOOOOM"];
-                        var rootProj = 'C:\\node\\GitHook\\tmp\\point-of-care\\joel-ci\\Source\\Cerner.PointOfCare.UI';
-                        var goodToGo = true;
+                        var items = [];
+                        var walker = walk.walk(branchPathFull, {
+                            followLinks: false, filters: ["Temp", "_Temp", "node_modules", "bin", "obj", ".vscode", ".git"]
+                        });
 
-                        Promise.reduce(commands, function(ind, curCommand) {
-                                return runTask(curCommand, rootProj, process.env);
+                        walker.on("file", function (root, fileStat, next) {
+                            if (fileStat.type === "file" && fileStat.name.toLowerCase() === "joel-ci.json") {
+                                fse.readFile(`${root}\\${fileStat.name}`, function (err, data) {
+                                    if (err) throw err;
+                                    items.push({ "path": root, "name": fileStat.name, "config": JSON.parse(data) });
+                                });
+                            }
+                            next();
+                        });
+                        walker.on("errors", function (root, nodeStatsArray, next) {
+                            next();
+                        });
+                        walker.on("end", function () {
+                            var goodToGo = true;
+
+                            Promise.reduce(items, function (tot, curConfig, ind, len) {
+                                return Promise.reduce(curConfig.config.scripts, function (ind, curCommand) {
+                                    return helpers.runTask(curCommand, curConfig.path, process.env);
+                                }, 0)
                             }, 0).then(() => {
                                 console.log('ALL TESTS RAN SUCCESSFULLY!');
-                            })
-                            .catch(() => {
+                                helpers.updateStatus(postUrl, "success", "all tasks completed successfully", function (error, response, body) {
+                                    console.log('Done for ' + sha1);
+                                });
+                            }).catch((ex) => {
+                                console.log(ex);
                                 console.log('SOME TESTS OR SOMETHING IN THE SAUCE STACK HAS FAILED!');
-                                goodToGo = false;
+                                helpers.updateStatus(postUrl, "failure", "error executing task(s)", function (error, response, body) {
+                                    console.log('Done for ' + sha1);
+                                });
                             });
-
-                        if (goodToGo == false) {
-                            //When tests fail
-                            payload = payloadGenerator("failure", "error executing task(s)");
-                        } else {
-                            payload = payloadGenerator("success", "Ready to be merged");
-                        }
-
-                        request.post(postUrl, {
-                            'json': true,
-                            'body': payload
-                        }, function(error, response, body) {
-                            console.log('Done for ' + sha1);
                         });
+                    }, function (failure) {
+                        console.log(failure);
+                    })
+                    .done(function () {
+                        console.log('Processing ' + sha1);
                     });
-                }, function(failure) {
-                    console.log(failure);
-                })
-                .done(function() {
-                    console.log('Processing ' + sha1);
-                });
-        });
-    })
+            });
+        })
+    });
 });
 
 github.listen();

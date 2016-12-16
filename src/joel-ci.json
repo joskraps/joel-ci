@@ -3,8 +3,8 @@
     "authToken": "fb924bf64d160620454f462990ae2d5f0436e97a",
     "authSecret": "",
     "authClient": "",
-    "scripts": {
-        "install" : "npm install",
-        "tests": "gulp \"run-tests\""
-    }
+    "scripts" : [
+        "npm install",
+        "gulp \"run-tests\""
+    ]
 }
