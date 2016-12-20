@@ -8,13 +8,14 @@
   "dependencies": {
     "bluebird": "^3.4.6",
     "child_process": "^1.0.2",
+    "eslint": "^3.12.2",
     "fs-extra": "^1.0.0",
     "githubhook": "^1.7.1",
-    "http": "0.0.0",
     "nodegit": "^0.16.0",
     "promisify": "0.0.3",
     "querystring": "^0.2.0",
     "request": "^2.79.0",
-    "walk": "^2.3.9"
+    "walk": "^2.3.9",
+    "winston": "^2.3.0"
   }
 }

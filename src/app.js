@@ -1,18 +1,17 @@
 var Promise = require('bluebird'),
+    helpers = require('./helpers.js'),
     githubhook = require('githubhook'),
-    exec = require('child_process').exec,
     nodegit = require("nodegit"),
     path = require('path'),
-    fse = require("fs-extra"),
-    util = require('util'),
-    http = require('http'),
-    request = require('request'),
-    url = require('url'),
-    walk = require('walk');
+    fse = require('fs-extra'),
+    removeAll = Promise.promisify(require('fs-extra').remove),
+    ensureDir = Promise.promisify(require('fs-extra').ensureDir),
+    updateStatus = Promise.promisify(helpers.updateStatus),
+    walk = require('walk').walk;
 
-var helpers = require('./helpers.js');
 var config = require('./server-config.js');
 var github = githubhook(config.gitHubHookConfig);
+var winston = require('winston');
 
 if (!fse.existsSync(config.rootDir)) {
     fse.mkdirSync(config.rootDir);
@@ -24,83 +23,55 @@ github.on('*', function (event, repo, ref, data) {
 
     if (event === "ping") return "pong";
     if (event == "pull_request") return "boom";
-    if (ref.indexOf('joel-ci') == -1) return "boomer";
+    if (ref.indexOf('ci-test') == -1) return "boomer";
 
-    var splitBranch = ref.split("/"),
-        branchName = splitBranch[splitBranch.length - 1],
-        sha1 = data.after,
-        cloneOptions = new nodegit.CloneOptions(),
-        branchPathFull = path.join(config.rootDir, repo, branchName),
-        postUrl = helpers.formatStatusUrl(data.repository.statuses_url, data.after, config);
+    var reqConfig = helpers.parseRequestConfig(ref,repo,data,config);
 
-    cloneOptions.checkoutBranch = branchName;
+    //initial update
+    updateStatus(reqConfig.postUrl, "pending", "Running tasks").then(function (updateResponse) {
+        return removeAll(reqConfig.branchFullPath);
+    }).then(function (removeError) {
+        if(removeError) throw removeError;
 
-    helpers.updateStatus(postUrl, "pending", "Running tasks", function (error, response, body) {
-        console.log('Cleaning');
-        fse.remove(branchPathFull, function (err) {
-            if (err) {
-                helpers.updateStatus(postUrl, "failure", err, function (error, response, body) {
-                });
-                return console.error(err)
-            }
-
-            console.log('Creating');
-            fse.ensureDir(branchPathFull, function (err2) {
-                if (err2) {
-                    helpers.updateStatus(postUrl, "failure", err, function (error, response, body) {
-                    });
-                    return console.error(err2)
-                }
-                console.log('Cloning');
-                nodegit.Clone(data.repository.html_url, branchPathFull, cloneOptions)
-                    .then(function (repo) {
-                        console.log('Updating status');
-
-                        var items = [];
-                        var walker = walk.walk(branchPathFull, {
-                            followLinks: false, filters: ["Temp", "_Temp", "node_modules", "bin", "obj", ".vscode", ".git"]
-                        });
-
-                        walker.on("file", function (root, fileStat, next) {
-                            if (fileStat.type === "file" && fileStat.name.toLowerCase() === "joel-ci.json") {
-                                fse.readFile(`${root}\\${fileStat.name}`, function (err, data) {
-                                    if (err) throw err;
-                                    items.push({ "path": root, "name": fileStat.name, "config": JSON.parse(data) });
-                                });
-                            }
-                            next();
-                        });
-                        walker.on("errors", function (root, nodeStatsArray, next) {
-                            next();
-                        });
-                        walker.on("end", function () {
-                            var goodToGo = true;
-
-                            Promise.reduce(items, function (tot, curConfig, ind, len) {
-                                return Promise.reduce(curConfig.config.scripts, function (ind, curCommand) {
-                                    return helpers.runTask(curCommand, curConfig.path, process.env);
-                                }, 0)
-                            }, 0).then(() => {
-                                console.log('ALL TESTS RAN SUCCESSFULLY!');
-                                helpers.updateStatus(postUrl, "success", "all tasks completed successfully", function (error, response, body) {
-                                    console.log('Done for ' + sha1);
-                                });
-                            }).catch((ex) => {
-                                console.log(ex);
-                                console.log('SOME TESTS OR SOMETHING IN THE SAUCE STACK HAS FAILED!');
-                                helpers.updateStatus(postUrl, "failure", "error executing task(s)", function (error, response, body) {
-                                    console.log('Done for ' + sha1);
-                                });
-                            });
-                        });
-                    }, function (failure) {
-                        console.log(failure);
-                    })
-                    .done(function () {
-                        console.log('Processing ' + sha1);
-                    });
+        return ensureDir(reqConfig.branchFullPath);
+    }).then(function (createdPath) {
+        return nodegit.Clone(data.repository.html_url, reqConfig.branchFullPath, reqConfig.cloneOptions);
+    }).then(function (repo) {
+        return new Promise(function (resolve,reject) {
+            var items = [];
+            var walker = walk(branchPreqConfig.branchFullPathathFull, {
+                followLinks: false, filters: config.ignoreDirs
             });
-        })
+
+            walker.on("file", function (root, fileStat, next) {
+                if (fileStat.type === "file" && fileStat.name.toLowerCase() === config.configFileName) {
+                    fse.readFile(`${root}\\${fileStat.name}`, function (err, data) {
+                        if (err) throw err;
+                        items.push({ "path": root, "name": fileStat.name, "config": JSON.parse(data) });
+                    });
+                }
+                next();
+            });
+            walker.on("errors", function (root, nodeStatsArray, next) {
+                next();
+            });
+            walker.on("end", function () {
+                resolve(items);
+            });
+        });
+    }).then(function (configFiles) {
+        return Promise.reduce(configFiles, function (tot, curConfig) {
+            return Promise.reduce(curConfig.config.scripts, function (innerIndex, curCommand) {
+                return helpers.runTask(curCommand, curConfig.path, process.env);
+            }, 0)
+        }, 0);
+    }).then(function () {
+        helpers.updateStatus(reqConfig.postUrl, "success", "all tasks completed successfully");
+    }).catch(function (ex) {
+        helpers.updateStatus(reqConfig.postUrl, "failure", "error executing task(s)");
+    }).finally(function () {
+    }).done(function () {
+        console.log('Done for ' + reqConfig.sha1);
     });
 });
 

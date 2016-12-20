@@ -12,5 +12,7 @@ module.exports = {
         secret: "123456",
         logger: console,
         path: '/gitback'
-    }
+    },
+    "ignoreDirs": ["Temp", "_Temp", "node_modules", "bin", "obj", ".vscode", ".git"],
+    "configFileName": "joel-ci.json"
 }
