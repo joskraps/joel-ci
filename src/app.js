@@ -2,44 +2,56 @@ var Promise = require('bluebird'),
     helpers = require('./helpers.js'),
     githubhook = require('githubhook'),
     nodegit = require("nodegit"),
-    path = require('path'),
     fse = require('fs-extra'),
     removeAll = Promise.promisify(require('fs-extra').remove),
     ensureDir = Promise.promisify(require('fs-extra').ensureDir),
     updateStatus = Promise.promisify(helpers.updateStatus),
-    walk = require('walk').walk;
+    walk = require('walk').walk,
+    path = require('path');
 
 var config = require('./server-config.js');
 var github = githubhook(config.gitHubHookConfig);
-var winston = require('winston');
+var logFolder = path.join(config.rootDir, 'logs');
 
 if (!fse.existsSync(config.rootDir)) {
     fse.mkdirSync(config.rootDir);
 }
 
-NPM_CONFIG_COLOR = "always";
 
-github.on('*', function (event, repo, ref, data) {
 
-    if (event === "ping") return "pong";
-    if (event == "pull_request") return "boom";
+github.on('push', function (repo, ref, data) {
+    var reqConfig = helpers.parseRequestConfig(ref, repo, data, config);
+    var logger = helpers.setupLogging(reqConfig,logFolder);
+
+    logger.info(`Received push from ${repo}:${ref}`);
+
     if (ref.indexOf('ci-test') == -1) return "boomer";
 
-    var reqConfig = helpers.parseRequestConfig(ref,repo,data,config);
+    var reqConfig = helpers.parseRequestConfig(ref, repo, data, config);
+    logger.info('Request config loaded: ', reqConfig);
 
-    //initial update
+    logger.profile(reqConfig.sha1);
     updateStatus(reqConfig.postUrl, "pending", "Running tasks").then(function (updateResponse) {
+        logger.info(`Update status complete: ${updateResponse.statusCode} ${updateResponse.statusMessage}`);
+        logger.info(`Removing existing folder @ ${reqConfig.branchFullPath}`);
+
         return removeAll(reqConfig.branchFullPath);
     }).then(function (removeError) {
-        if(removeError) throw removeError;
-
+        if (removeError) throw removeError;
+        logger.info(`Creating clone directory @ ${reqConfig.branchFullPath}`);
         return ensureDir(reqConfig.branchFullPath);
     }).then(function (createdPath) {
-        return nodegit.Clone(data.repository.html_url, reqConfig.branchFullPath, reqConfig.cloneOptions);
+        logger.info(`Cloning from ${reqConfig.repoUrl} - checkout branch is ${reqConfig.branchName}`);
+
+        var cloneOptions = new nodegit.CloneOptions();
+
+        cloneOptions.checkoutBranch = reqConfig.branchName;
+
+        return nodegit.Clone(reqConfig.repoUrl, createdPath, cloneOptions);
     }).then(function (repo) {
-        return new Promise(function (resolve,reject) {
+        return new Promise(function (resolve, reject) {
             var items = [];
-            var walker = walk(branchPreqConfig.branchFullPathathFull, {
+            var walker = walk(reqConfig.branchFullPath, {
                 followLinks: false, filters: config.ignoreDirs
             });
 
@@ -47,6 +59,7 @@ github.on('*', function (event, repo, ref, data) {
                 if (fileStat.type === "file" && fileStat.name.toLowerCase() === config.configFileName) {
                     fse.readFile(`${root}\\${fileStat.name}`, function (err, data) {
                         if (err) throw err;
+                        logger.info(`Found config @  ${root}`);
                         items.push({ "path": root, "name": fileStat.name, "config": JSON.parse(data) });
                     });
                 }
@@ -62,16 +75,23 @@ github.on('*', function (event, repo, ref, data) {
     }).then(function (configFiles) {
         return Promise.reduce(configFiles, function (tot, curConfig) {
             return Promise.reduce(curConfig.config.scripts, function (innerIndex, curCommand) {
-                return helpers.runTask(curCommand, curConfig.path, process.env);
+                logger.info(`Running script:  ${curCommand} @ path ${curConfig.path}`);
+                return helpers.runTask(curCommand, curConfig.path,logger);
             }, 0)
         }, 0);
     }).then(function () {
+        logger.info('All tasks completed');
         helpers.updateStatus(reqConfig.postUrl, "success", "all tasks completed successfully");
     }).catch(function (ex) {
+        logger.error(`Error executing task(s)`, ex);
         helpers.updateStatus(reqConfig.postUrl, "failure", "error executing task(s)");
     }).finally(function () {
+
     }).done(function () {
-        console.log('Done for ' + reqConfig.sha1);
+        logger.profile(reqConfig.sha1);
+        logger.info(`All done for ${reqConfig.sha1}`);
+        // clean up folder to save space
+        return removeAll(reqConfig.branchFullPath);
     });
 });
 
