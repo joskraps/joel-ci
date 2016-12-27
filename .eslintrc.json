@@ -1,0 +1,14 @@
+{
+    "extends": "airbnb-base",
+    "installedESLint": true,
+    "eslint linebreak-style": ["error", "windows"],
+    "plugins": [
+        "import"
+    ],
+    "rules": {
+        "linebreak-style": ["error","windows"]
+    },
+    "env": {
+        "node": true
+    }
+}
