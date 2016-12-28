@@ -23,29 +23,30 @@ module.exports = {
             })
         };
 
-        var com = spawn(command ,[], { cwd: root, env: process.env});
+        var com = exec(command,{ cwd: root, env: process.env});
 
         com.stdout.on('data', function (data) {
             logger.info(data.toString());
         });
 
         com.stderr.on('data', function (data) {
-            logger.error("Error executing task :(",data);
+            logger.warn(data.toString());
         });
 
         com.on('exit', function (data) {
-            logger.info("Exit",data);
+            logger.info(`Exit with code ${data}`);
         });
 
         return promiseFromChildProcess(com);
     },
-    updateStatus: function (statusUrl, status, message, callback) {
+    updateStatus: function (statusUrl, status, message,target, callback) {
         request.post(statusUrl, {
             'json': true,
             'body': {
                 "state": status,
                 "description": message,
-                "context": "continuous-integration/joel-ci"
+                "context": "continuous-integration/joel-ci",
+                "target_url": target
             }
         }, function (error, response, body) {
             if (callback) callback(error, response, body);
@@ -77,13 +78,15 @@ module.exports = {
     setupLogging: function (reqConfig, logFilePath) {
         var logger = new winston.Logger();
         logger.level = process.env.LOG_LEVEL || 'info';
-        var logFilePath = path.join(__dirname, "logs", reqConfig.repo);
 
-        fse.ensureDirSync(logFilePath)
+        var finalPath = path.join(logFilePath,reqConfig.repo,reqConfig.branchName);
+
+        fse.ensureDirSync(finalPath);
+        fse.removeSync(path.join(finalPath, `${reqConfig.sha1}.log`));
 
         logger.configure({
             transports: [
-                new (winston.transports.File)({ filename: path.join(logFilePath, `joel-ci_${reqConfig.sha1}.logs`) })
+                new (winston.transports.File)({ json: false,filename: path.join(finalPath, `${reqConfig.sha1}.log`) })
             ]
         });
 

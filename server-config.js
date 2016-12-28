@@ -14,5 +14,9 @@ module.exports = {
         path: '/gitback'
     },
     "ignoreDirs": ["Temp", "_Temp", "node_modules", "bin", "obj", ".vscode", ".git"],
-    "configFileName": "joel-ci.json"
+    "configFileName": "joel-ci.json",
+    "resultsPort": 667,
+    "resultsProtocol": "http://",
+    "ignoredBranches": [],
+    "acceptedBranches": ['*']
 }
