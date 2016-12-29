@@ -3,8 +3,10 @@ node_js:
   - 6
 before_script:
     - npm install gulp
-script: gulp
+    - npm install release-it
+script: 
+    - gulp
+    - release-it --non-interactive
 branches:
   only:
     - master
-    - dev
