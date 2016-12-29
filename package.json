@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "start": "node app.js",
-    "test": "gulp"
+    "test": "gulp",
+    "lint": "eslint ."
   },
   "dependencies": {
     "bluebird": "^3.4.7",
     "child_process": "^1.0.2",
     "fs-extra": "^1.0.0",
     "githubhook": "^1.7.1",
+    "gulp": "^3.9.1",
     "node-router": "^0.1.5",
     "nodegit": "^0.16.0",
     "promisify": "0.0.3",
@@ -21,6 +23,12 @@
   },
   "devDependencies": {
     "eslint": "^3.12.2",
+    "eslint-config-airbnb": "^13.0.0",
+    "eslint-config-airbnb-base": "^11.0.0",
+    "eslint-plugin-import": "^2.2.0",
+    "eslint-plugin-jsx-a11y": "^2.2.3",
+    "eslint-plugin-react": "^6.6.0",
+    "gulp": "^3.9.1",
     "gulp-eslint": "^3.0.1"
   }
 }

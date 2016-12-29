@@ -1,14 +1,16 @@
 {
     "env": {
-        "browser": false,
-        "commonjs": true,
         "es6": true,
-        "node": true
+        "node": true,
+        "commonjs": true
     },
+    "extends": ["airbnb-base","eslint:recommended"],
+    "plugins": [
+        "import"
+    ],
     "parserOptions": {
-        "ecmaFeatures": {
-            "jsx": true
-        },
         "sourceType": "module"
+    },
+    "rules": {
     }
 }

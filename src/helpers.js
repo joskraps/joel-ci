@@ -1,95 +1,98 @@
-var request = require('request')
-    , url = require('url')
-    , exec = require("child_process").exec
-    , spawn = require("child_process").spawn
-    , path = require('path')
-    , winston = require('winston')
-    , fse = require('fs-extra');
+const request = require('request');
+const url = require('url');
+const exec = require('child_process').exec;
+    // , spawn = require("child_process").spawn
+const path = require('path');
+const winston = require('winston');
+const fse = require('fs-extra');
 
 module.exports = {
-    runTask: function (command, root,logger) {
-        var promiseFromChildProcess = function (child) {
-            return new Promise((resolve, reject) => {
-                child.addListener('error', (code) => {
-                    reject();
-                });
-                child.addListener('exit', (code) => {
-                    if (code === 0) {
-                        resolve();
-                    } else {
-                        reject();
-                    }
-                });
-            })
-        };
-
-        var com = exec(command,{ cwd: root, env: process.env});
-
-        com.stdout.on('data', function (data) {
-            logger.info(data.toString());
+  runTask(command, root, logger) {
+    const promiseFromChildProcess = function promiseFromChildProcess(child) {
+      return new Promise((resolve, reject) => {
+        child.addListener('error', (code) => {
+          reject(code);
         });
-
-        com.stderr.on('data', function (data) {
-            logger.warn(data.toString());
+        child.addListener('exit', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject();
+          }
         });
+      });
+    };
 
-        com.on('exit', function (data) {
-            logger.info(`Exit with code ${data}`);
-        });
+    const com = exec(command, { cwd: root, env: process.env });
 
-        return promiseFromChildProcess(com);
-    },
-    updateStatus: function (statusUrl, status, message,target, callback) {
-        request.post(statusUrl, {
-            'json': true,
-            'body': {
-                "state": status,
-                "description": message,
-                "context": "continuous-integration/joel-ci",
-                "target_url": target
-            }
-        }, function (error, response, body) {
-            if (callback) callback(error, response, body);
+    com.stdout.on('data', (data) => {
+      logger.info(data.toString());
+    });
 
-            return false;
-        })
-    },
-    formatStatusUrl: function (baseUrl, sha, config) {
-        var baseUrl = url.parse(baseUrl.replace("{sha}", sha), false, true);
-        baseUrl.auth = `${config.authUser}:${config.authToken}`;
-        var postUrl = `${baseUrl.protocol}//${baseUrl.auth}@${baseUrl.hostname}${baseUrl.path}`;
+    com.stderr.on('data', (data) => {
+      logger.warn(data.toString());
+    });
 
-        return postUrl;
-    },
-    parseRequestConfig: function (ref, repo, data, config) {
-        var options = {};
-        var splitRef = ref.split("/");
+    com.on('exit', (data) => {
+      logger.info(`Exit with code ${data}`);
+    });
 
-        options.branchName = splitRef[splitRef.length - 1];
-        options.repo = repo;
-        options.ref = ref;
-        options.sha1 = data.after;
-        options.branchFullPath = path.join(config.rootDir, repo, options.branchName, options.sha1);
-        options.postUrl = this.formatStatusUrl(data.repository.statuses_url, data.after, config);
-        options.repoUrl = data.repository.html_url;
+    return promiseFromChildProcess(com);
+  },
+  updateStatus(statusUrl, status, message, target, callback) {
+    request.post(statusUrl, {
+      json: true,
+      body: {
+        state: status,
+        description: message,
+        context: 'continuous-integration/joel-ci',
+        target_url: target,
+      },
+    }, (error, response, body) => {
+      if (callback) callback(error, response, body);
 
-        return options;
-    },
-    setupLogging: function (reqConfig, logFilePath) {
-        var logger = new winston.Logger();
-        logger.level = process.env.LOG_LEVEL || 'info';
+      return false;
+    });
+  },
+  formatStatusUrl(baseUrl, sha, config) {
+    const formattedUrl = url.parse(baseUrl.replace('{sha}', sha), false, true);
+    formattedUrl.auth = `${config.authUser}:${config.authToken}`;
+    const postUrl = `${formattedUrl.protocol}//${formattedUrl.auth}@${formattedUrl.hostname}${formattedUrl.path}`;
 
-        var finalPath = path.join(logFilePath,reqConfig.repo,reqConfig.branchName);
+    return postUrl;
+  },
+  parseRequestConfig(ref, repo, data, config) {
+    const options = {};
+    const splitRef = ref.split('/');
 
-        fse.ensureDirSync(finalPath);
-        fse.removeSync(path.join(finalPath, `${reqConfig.sha1}.log`));
+    options.branchName = splitRef[splitRef.length - 1];
+    options.repo = repo;
+    options.ref = ref;
+    options.sha1 = data.after;
+    options.branchFullPath = path.join(config.rootDir, repo, options.branchName, options.sha1);
+    options.postUrl = this.formatStatusUrl(data.repository.statuses_url, data.after, config);
+    options.repoUrl = data.repository.html_url;
 
-        logger.configure({
-            transports: [
-                new (winston.transports.File)({ json: false,filename: path.join(finalPath, `${reqConfig.sha1}.log`) })
-            ]
-        });
+    return options;
+  },
+  setupLogging(reqConfig, logFilePath) {
+    const logger = new winston.Logger();
+    logger.level = process.env.LOG_LEVEL || 'info';
 
-        return logger;
+    const finalLogPath = path.join(logFilePath, reqConfig.repo, reqConfig.branchName, `${reqConfig.sha1}.log`);
+
+    if(fse.exists(finalLogPath)) {
+        fse.unlinkSync(finalLogPath);
     }
-}
+
+    fse.ensureFileSync(finalLogPath);
+
+    logger.configure({
+      transports: [
+        new (winston.transports.File)({ json: false, filename: finalLogPath }),
+      ],
+    });
+
+    return logger;
+  },
+};
