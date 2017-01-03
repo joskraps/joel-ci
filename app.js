@@ -23,6 +23,10 @@ global.appRoot = path.resolve(__dirname);
 
 github.on('push', (repo, ref, data) => {
   const reqConfig = helpers.parseRequestConfig(ref, repo, data, config);
+
+  //todo add checks against config ignore/accept lists
+  //if(config.acceptedBranches.length > 0 && (config.acceptedBranches.indexOf()))
+
   const logger = helpers.setupLogging(reqConfig, logFolder);
   const targetUrlHost = config.resultsProtocol + data.request.headers.host.split(':')[0] // this needs to pull from the config
     .concat(':')
@@ -38,8 +42,8 @@ github.on('push', (repo, ref, data) => {
   if (ref.indexOf('ci-test') === -1) return 'boomer';
 
   logger.info('Request config loaded: ', reqConfig);
-
   logger.profile(reqConfig.sha1);
+
   updateStatus(reqConfig.postUrl, 'pending', 'Running tasks', null).then((updateResponse) => {
     logger.info(`Update status complete: ${updateResponse.statusCode} ${updateResponse.statusMessage}`);
     logger.info(`Removing existing folder @ ${reqConfig.branchFullPath}`);
@@ -48,7 +52,9 @@ github.on('push', (repo, ref, data) => {
   })
     .then((removeError) => {
       if (removeError) throw removeError;
+
       logger.info(`Creating clone directory @ ${reqConfig.branchFullPath}`);
+
       return ensureDir(reqConfig.branchFullPath);
     })
     .then((createdPath) => {
@@ -99,16 +105,19 @@ github.on('push', (repo, ref, data) => {
         }, 0), 0))
     .then(() => {
       logger.info('All tasks completed');
+
       helpers.updateStatus(reqConfig.postUrl, 'success', 'all tasks completed successfully', targetUrlHost);
     })
     .catch((ex) => {
       logger.error('Error executing task(s)', ex);
+
       helpers.updateStatus(reqConfig.postUrl, 'failure', 'error executing task(s)', targetUrlHost);
     })
     .finally(() => {
     })
     .done(() => {
       logger.profile(reqConfig.sha1);
+
       logger.info(`All done for ${reqConfig.sha1}`);
       // clean up folder to save space
       return true; // removeAll(reqConfig.branchFullPath);
