@@ -39,8 +39,6 @@ github.on('push', (repo, ref, data) => {
   logger.info(`Received push from ${repo}:${ref}`);
   logger.info(`Target URL:  ${targetUrlHost}`);
 
-  if (ref.indexOf('ci-test') === -1) return 'boomer';
-
   logger.info('Request config loaded: ', reqConfig);
   logger.profile(reqConfig.sha1);
 
@@ -53,18 +51,18 @@ github.on('push', (repo, ref, data) => {
     .then((removeError) => {
       if (removeError) throw removeError;
 
-      logger.info(`Creating clone directory @ ${reqConfig.branchFullPath}`);
+      logger.info(`Creating clone directory @ ${reqConfig.baseBranchPath}`);
 
-      return ensureDir(reqConfig.branchFullPath);
+      return ensureDir(reqConfig.baseBranchPath);
     })
-    .then((createdPath) => {
+    .then((createdPath) => { // eslint-disable-line no-unused-vars
       logger.info(`Cloning from ${reqConfig.repoUrl} - checkout branch is ${reqConfig.branchName}`);
 
-      let cloneOptions = new nodegit.CloneOptions();
+      var cloneOptions = new nodegit.CloneOptions();
 
       cloneOptions.checkoutBranch = reqConfig.branchName;
 
-      return nodegit.Clone(reqConfig.repoUrl, createdPath, cloneOptions);
+      return nodegit.Clone(reqConfig.repoUrl, reqConfig.branchFullPath, cloneOptions);
     })
     .then(repo2 => new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
       const items = [];
@@ -86,6 +84,7 @@ github.on('push', (repo, ref, data) => {
               config: JSON.parse(data2),
             });
           });
+          logger.info("Configs found: ${items}")
         }
         next();
       });
@@ -120,7 +119,8 @@ github.on('push', (repo, ref, data) => {
 
       logger.info(`All done for ${reqConfig.sha1}`);
       // clean up folder to save space
-      return true; // removeAll(reqConfig.branchFullPath);
+      // removeAll(reqConfig.branchFullPath);
+      return true; 
     });
 
   return true;

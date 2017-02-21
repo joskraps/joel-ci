@@ -69,6 +69,7 @@ module.exports = {
     options.repo = repo;
     options.ref = ref;
     options.sha1 = data.after;
+    options.baseBranchPath = path.join(config.rootDir,repo, options.branchName);
     options.branchFullPath = path.join(config.rootDir, repo, options.branchName, options.sha1);
     options.postUrl = this.formatStatusUrl(data.repository.statuses_url, data.after, config);
     options.repoUrl = data.repository.html_url;
