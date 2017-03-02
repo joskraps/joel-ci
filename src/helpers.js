@@ -14,7 +14,7 @@ module.exports = {
           reject(code);
         });
         child.addListener('exit', (code) => {
-          if (code === 0) {
+          if (code != null && code === 0) {
             resolve();
           } else {
             reject();
@@ -23,18 +23,30 @@ module.exports = {
       });
     };
 
-    const com = exec(command, { cwd: root, env: process.env });
+    const com = exec(command, { cwd: root, env: process.env, maxBuffer: 2000 * 1024 });
 
     com.stdout.on('data', (data) => {
       logger.info(data.toString());
+    });
+
+    com.stdout.on('end', () => {
+      logger.info("end");
     });
 
     com.stderr.on('data', (data) => {
       logger.warn(data.toString());
     });
 
-    com.on('exit', (data) => {
-      logger.info(`Exit with code ${data}`);
+    com.on('exit', (data,signal) => {
+      logger.info(`Exit with code ${data} & signal ${signal}`);
+    });
+
+    com.on('error', (error) => {
+      logger.info(`Exit with error ${error.message}`);
+    });
+
+    com.on('close', (code,signal) => {
+      logger.info(`Close with code ${code} & signal ${signal}`);
     });
 
     return promiseFromChildProcess(com);
