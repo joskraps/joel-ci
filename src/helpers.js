@@ -1,7 +1,6 @@
 const request = require('request');
 const url = require('url');
 const exec = require('child_process').exec;
-    // , spawn = require("child_process").spawn
 const path = require('path');
 const winston = require('winston');
 const fse = require('fs-extra');

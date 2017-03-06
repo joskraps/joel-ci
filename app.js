@@ -4,6 +4,7 @@ const githubhook = require('githubhook');
 const nodegit = require('nodegit');
 const fse = require('fs-extra');
 const removeAll = Promise.promisify(require('fs-extra').remove);
+const removeAllNp = require('fs-extra').remove;
 const ensureDir = Promise.promisify(require('fs-extra').ensureDir);
 const walk = require('walk').walk;
 const path = require('path');
@@ -28,6 +29,7 @@ github.on('push', (repo, ref, data) => {
   //if(config.acceptedBranches.length > 0 && (config.acceptedBranches.indexOf()))
 
   const logger = helpers.setupLogging(reqConfig, logFolder);
+
   const targetUrlHost = config.resultsProtocol + data.request.headers.host.split(':')[0] // this needs to pull from the config
     .concat(':')
     .concat(config.resultsPort)
@@ -113,13 +115,12 @@ github.on('push', (repo, ref, data) => {
       helpers.updateStatus(reqConfig.postUrl, 'failure', 'error executing task(s)', targetUrlHost);
     })
     .finally(() => {
+      removeAllNp(reqConfig.branchFullPath);
     })
     .done(() => {
       logger.profile(reqConfig.sha1);
-
       logger.info(`All done for ${reqConfig.sha1}`);
-      // clean up folder to save space
-      // removeAll(reqConfig.branchFullPath);
+
       return true; 
     });
 
